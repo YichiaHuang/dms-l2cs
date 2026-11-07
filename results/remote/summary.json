@@ -1,0 +1,122 @@
+{
+ "means": {
+  "p_last": {
+   "mean": 4.704,
+   "std": 0.9583,
+   "n": 15
+  },
+  "p_best": {
+   "mean": 3.5317,
+   "std": 0.66,
+   "n": 15
+  },
+  "i_last": {
+   "mean": 4.1507,
+   "std": 1.1718,
+   "n": 15
+  },
+  "i_best": {
+   "mean": 3.3809,
+   "std": 0.6893,
+   "n": 15
+  },
+  "fig2": {
+   "mean": 3.9387,
+   "std": 1.0852,
+   "n": 15
+  }
+ },
+ "repro": [
+  {
+   "person": "p07",
+   "recipe": "paper",
+   "local_run": "fold7_e10",
+   "local": 5.0354,
+   "remote": 4.9544,
+   "diff": -0.081,
+   "comparable": true
+  },
+  {
+   "person": "p00",
+   "recipe": "paper",
+   "local_run": "fold0_e15",
+   "local": 2.7783,
+   "remote": 2.8045,
+   "diff": 0.0262,
+   "comparable": true
+  },
+  {
+   "person": "p00",
+   "recipe": "improved",
+   "local_run": "fold0_improved_e7",
+   "local": 2.4335,
+   "remote": 2.4514,
+   "diff": 0.0179,
+   "comparable": false
+  },
+  {
+   "person": "p03",
+   "recipe": "improved",
+   "local_run": "fold3_improved_e7",
+   "local": 4.0967,
+   "remote": 3.0723,
+   "diff": -1.0244,
+   "comparable": false
+  },
+  {
+   "person": "p07",
+   "recipe": "improved",
+   "local_run": "fold7_improved_e7",
+   "local": 4.346,
+   "remote": 3.9617,
+   "diff": -0.3843,
+   "comparable": false
+  },
+  {
+   "person": "p11",
+   "recipe": "improved",
+   "local_run": "fold11_improved_e7",
+   "local": 4.734,
+   "remote": 5.3147,
+   "diff": 0.5807,
+   "comparable": false
+  },
+  {
+   "person": "p14",
+   "recipe": "improved",
+   "local_run": "fold14_improved_e7",
+   "local": 4.9129,
+   "remote": 5.1368,
+   "diff": 0.2239,
+   "comparable": false
+  },
+  {
+   "person": "p03",
+   "recipe": "paper",
+   "local_run": "fold3_paper_e7",
+   "local": 3.0264,
+   "remote": 2.93,
+   "diff": -0.0964,
+   "comparable": true
+  },
+  {
+   "person": "p11",
+   "recipe": "paper",
+   "local_run": "fold11_paper_e7",
+   "local": 5.5339,
+   "remote": 5.2172,
+   "diff": -0.3167,
+   "comparable": true
+  },
+  {
+   "person": "p14",
+   "recipe": "paper",
+   "local_run": "fold14_paper_e7",
+   "local": 4.7509,
+   "remote": 4.8164,
+   "diff": 0.0655,
+   "comparable": true
+  }
+ ],
+ "paired_diff_mean": -0.5532866666666666
+}

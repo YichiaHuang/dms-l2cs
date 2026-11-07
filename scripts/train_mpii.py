@@ -47,6 +47,15 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "L2CS-Net"))
+try:  # l2cs/__init__ imports pipeline.py -> face_detection (RetinaFace), which training never uses.
+    import face_detection  # noqa: F401
+except ImportError:  # allow training on machines where face_detection can't be installed
+    import types
+    _fd = types.ModuleType("face_detection")
+    def _no_retinaface(*a, **k):
+        raise ImportError("face_detection is not installed (only needed for the inference Pipeline)")
+    _fd.RetinaFace = _no_retinaface
+    sys.modules["face_detection"] = _fd
 from l2cs import L2CS, Mpiigaze, gazeto3d, angular  # noqa: E402
 
 BINS, BIN_W, ANGLE = 28, 3, 42
