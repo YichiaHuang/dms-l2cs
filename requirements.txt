@@ -1,0 +1,10 @@
+# Versions used on the local WSL2 machine (2026-11). torch/torchvision are NOT listed here:
+# install them first to match the machine's CUDA (see scripts/remote/setup_env.sh); any torch >= 2.3 works.
+numpy>=1.26,<3
+pillow>=10
+opencv-python-headless>=4.8
+scipy>=1.11
+pandas>=2.0
+matplotlib>=3.7
+safetensors>=0.4
+tqdm

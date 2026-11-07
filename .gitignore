@@ -1,0 +1,19 @@
+# weights / checkpoints / datasets never go to GitHub (re-downloaded or kept on the training machine)
+*.pkl
+*.pt
+*.pth
+*.safetensors
+*.zip
+datasets/
+runs/
+# outputs of run_l2cs.py (videos can be large); keep the one sample image
+out/*
+!out/zidane.jpg
+# python / editor junk
+__pycache__/
+*.pyc
+*.egg-info/
+.ipynb_checkpoints/
+.vscode/
+.DS_Store
+Thumbs.db

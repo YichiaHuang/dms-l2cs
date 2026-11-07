@@ -1,0 +1,20 @@
+{
+  "data": "/home/yichia/datasets/MPIIFaceGaze",
+  "fold": 7,
+  "epochs": 10,
+  "batch_size": 16,
+  "lr": 1e-05,
+  "alpha": 1.0,
+  "workers": 6,
+  "amp": true,
+  "bn_train": false,
+  "out": "/home/yichia/runs/l2cs/fold7_e10",
+  "seed": 0,
+  "max_iters": 0,
+  "save_every_epoch": true,
+  "held_out": "p07",
+  "n_train": 34824,
+  "n_test": 2843,
+  "torch": "2.11.0+cu128",
+  "gpu": "NVIDIA RTX PRO 1000 Blackwell Generation Laptop GPU"
+}
