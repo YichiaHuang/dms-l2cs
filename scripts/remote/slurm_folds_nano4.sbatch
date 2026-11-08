@@ -4,6 +4,7 @@
 # (done.json -> skip, state.pt -> --resume), so a job killed by walltime is simply resubmitted.
 #   sbatch --export=ALL,TAG=paper_e50,RECIPE=paper,EPOCHS=50 scripts/remote/slurm_folds_nano4.sbatch
 #   sbatch --export=ALL,TAG=abl_cosine_e50,RECIPE=improved,EPOCHS=50,FOLDS=0/3/7/11/14,EXTRA=--no-aug ...
+#   sbatch --export=ALL,TAG=mnv3l_e20,RECIPE=improved,EPOCHS=20,EXTRA=--backbone+mobilenet_v3_large+--lr+1e-4 ...
 # Notes (Nano4): account acd114003 is not allowed on Nano4 -> acd110018; 12 CPU per GPU max (8*12=96);
 # partition 8gpus has a 2-day walltime. Submit from the repo root (cd ~/DMS).
 #SBATCH -J l2cs
@@ -17,8 +18,8 @@
 #SBATCH -o /work/u8714813/runs/l2cs/slurm/%x-%j.out
 set -u
 TAG="${TAG:?set TAG}"; RECIPE="${RECIPE:-paper}"; EPOCHS="${EPOCHS:-50}"; FOLDS="${FOLDS:-0-14}"
-EXTRA="${EXTRA:-}"; EXTRA="${EXTRA//_/ }"     # "--sched_const" -> "--sched const" (sbatch --export can't carry spaces)
-GPUS="${GPUS:-0,1,2,3,4,5,6,7}"; WORKERS="${WORKERS:-4}"
+EXTRA="${EXTRA:-}"; EXTRA="${EXTRA//+/ }"     # "--sched+const" -> "--sched const" (sbatch --export can't carry spaces)
+GPUS="${GPUS:-0,1,2,3,4,5,6,7}"; WORKERS="${WORKERS:-4}"; RUNS="${RUNS:-/work/u8714813/runs/l2cs}"
 . /work/u8714813/envs/l2cs/bin/activate
 export TMPDIR=/work/u8714813/tmp
 cd "$SLURM_SUBMIT_DIR"

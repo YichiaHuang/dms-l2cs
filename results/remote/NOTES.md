@@ -13,7 +13,7 @@
 ## 偏離計畫 / 臨時決定
 1. **路徑**：`DATA=/work/u8714813/datasets/MPIIFaceGaze`、`RUNS=/work/u8714813/runs/l2cs`（計畫寫 `~/datasets`、`~/runs`），原因是 /work 空間大很多。
 2. **Python 環境**：機器沒有 conda/module；下載後執行 Miniforge 安裝腳本被權限擋下 → 改用系統 Python 3.9 建 venv `/work/u8714813/envs/l2cs`，pip 裝 `torch 2.8.0+cu128`、`torchvision 0.23.0+cu128`、`requirements.txt`、`pip install -e L2CS-Net --no-deps`。沒有跑 `setup_env.sh` 本身（它在無 GPU 的 login node 會判斷錯走 conda 分支），改成手動做同樣的步驟；ResNet-50 ImageNet 權重已預先下載到 `~/.cache/torch/hub`。`face_detection` 沒裝（只有推論 demo 用得到）。
-3. **Slurm 範本**：新增 `scripts/remote/slurm_folds_nano4.sbatch`（`-A acd110018 -p 8gpus --gres=gpu:H200:8 --cpus-per-task=96 -t 2-00:00:00`），原本的台灣杉二號範本保留不動。EXTRA 裡的空白用 `_` 傳（例如 `EXTRA=--sched_const`）。
+3. **Slurm 範本**：新增 `scripts/remote/slurm_folds_nano4.sbatch`（`-A acd110018 -p 8gpus --gres=gpu:H200:8 --cpus-per-task=96 -t 2-00:00:00`），原本的台灣杉二號範本保留不動。EXTRA 裡的空白用 `_` 傳（例如 `EXTRA=--sched+const`）。
 4. **tmux**：訓練以 sbatch job 執行（不依附 SSH）；另開 tmux session `l2cs` 放監控與「job 結束就重送續跑」的迴圈。
 5. 暫存目錄一律用 `/work/u8714813/tmp`（700），不寫共用 `/tmp`。
 
@@ -90,4 +90,4 @@ improved − paper @ep50：平均 −0.55°，12/15 人改善，配對 t 檢定 
 - 結果：`results/remote/`（RESULTS_REMOTE.md、表、圖、CSV），branch **`remote-results`**。
 - 補跑 C 的指令（約 12 GPU-h）：
   `sbatch -J l2cs-C1 -A acd110018 --gres=gpu:H200:5 --cpus-per-task=60 --export=ALL,TAG=abl_cosine_e50,RECIPE=improved,EPOCHS=50,FOLDS=0/3/7/11/14,GPUS=0/1/2/3/4,EXTRA=--no-aug scripts/remote/slurm_folds_nano4.sbatch`
-  `sbatch -J l2cs-C2 -A acd110018 --gres=gpu:H200:5 --cpus-per-task=60 --export=ALL,TAG=abl_aug_e50,RECIPE=improved,EPOCHS=50,FOLDS=0/3/7/11/14,GPUS=0/1/2/3/4,EXTRA=--sched_const scripts/remote/slurm_folds_nano4.sbatch`
+  `sbatch -J l2cs-C2 -A acd110018 --gres=gpu:H200:5 --cpus-per-task=60 --export=ALL,TAG=abl_aug_e50,RECIPE=improved,EPOCHS=50,FOLDS=0/3/7/11/14,GPUS=0/1/2/3/4,EXTRA=--sched+const scripts/remote/slurm_folds_nano4.sbatch`

@@ -13,6 +13,15 @@ Recipes
                      flip with the horizontal gaze angle negated.
   Individual flags (--sched, --aug, --lr, ...) override the recipe.
 
+Lightweight variants (all default to the original model, so old commands behave exactly as before)
+  --backbone resnet50|resnet18|mobilenet_v3_large|efficientnet_b0   ImageNet-pretrained torchvision backbone + the
+                     same two 28-bin heads. Non-ResNet-50 backbones train every layer with BN in train mode
+                     (the frozen conv1/bn1 + frozen-BN quirk below only applies to the original ResNet-50).
+  --img-size N       input resolution (default 448, as in L2CS-Net)
+  --teacher PATH     knowledge distillation from a trained ResNet-50 L2CS state dict (use the same fold's model,
+                     which never saw the held-out person, and its last.pkl rather than best.pkl, which was chosen
+                     on the test person). Adds kd_weight * T^2 * KL(teacher_T || student_T) on both bin heads.
+
 --amp picks bf16 autocast where the GPU supports it natively (Ampere+), otherwise fp16 autocast with a
 GradScaler (e.g. V100 on TWCC); force one with --amp-dtype. The dtype used is written to config.json.
 
@@ -60,11 +69,16 @@ from l2cs import L2CS, Mpiigaze, gazeto3d, angular  # noqa: E402
 
 BINS, BIN_W, ANGLE = 28, 3, 42
 RESNET50_URL = "https://download.pytorch.org/models/resnet50-19c8e357.pth"
-NORMALIZE = transforms.Compose([
-    transforms.Resize(448),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
+def make_normalize(size=448):
+    return transforms.Compose([
+        transforms.Resize(size),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+
+
+NORMALIZE = make_normalize(448)
+BACKBONES = ["resnet50", "resnet18", "mobilenet_v3_large", "efficientnet_b0"]
 RECIPES = {
     "paper": dict(sched="const", aug=False),
     "improved": dict(sched="cosine", aug=True),
@@ -74,8 +88,8 @@ RECIPES = {
 class MpiiFold(Mpiigaze):
     """Same file list / filtering as l2cs.Mpiigaze, plus optional augmentation with label-consistent flip."""
 
-    def __init__(self, labels, root, train, fold, aug=False):
-        super().__init__(labels, root, NORMALIZE, train, ANGLE, fold)
+    def __init__(self, labels, root, train, fold, aug=False, img_size=448):
+        super().__init__(labels, root, make_normalize(img_size), train, ANGLE, fold)
         self.aug = aug
         self.aug_tf = transforms.Compose([
             transforms.RandomAffine(degrees=0, translate=(0.05, 0.05), scale=(0.95, 1.05)),
@@ -101,7 +115,37 @@ class MpiiFold(Mpiigaze):
         return img, torch.as_tensor(binned), torch.FloatTensor([pitch, yaw]), f"{line[0]}|{line[3]}|{flipped}"
 
 
-def build_model(pretrained=True):
+class LightL2CS(nn.Module):
+    """torchvision backbone (ImageNet weights) -> global average pool -> two 28-bin heads, same outputs as L2CS:
+    forward returns (logits for label[0], logits for label[1])."""
+
+    def __init__(self, name, pretrained=True):
+        super().__init__()
+        tv = torchvision.models
+        if name == "resnet18":
+            net = tv.resnet18(weights=tv.ResNet18_Weights.IMAGENET1K_V1 if pretrained else None)
+            dim = net.fc.in_features; net.fc = nn.Identity(); self.features = net
+        elif name == "mobilenet_v3_large":
+            net = tv.mobilenet_v3_large(weights=tv.MobileNet_V3_Large_Weights.IMAGENET1K_V1 if pretrained else None)
+            dim = net.classifier[0].in_features
+            self.features = nn.Sequential(net.features, net.avgpool, nn.Flatten())
+        elif name == "efficientnet_b0":
+            net = tv.efficientnet_b0(weights=tv.EfficientNet_B0_Weights.IMAGENET1K_V1 if pretrained else None)
+            dim = net.classifier[1].in_features
+            self.features = nn.Sequential(net.features, net.avgpool, nn.Flatten())
+        else:
+            raise ValueError(name)
+        self.fc_yaw_gaze = nn.Linear(dim, BINS)     # same names/order as L2CS: first output = label[0]
+        self.fc_pitch_gaze = nn.Linear(dim, BINS)
+
+    def forward(self, x):
+        f = torch.flatten(self.features(x), 1)
+        return self.fc_yaw_gaze(f), self.fc_pitch_gaze(f)
+
+
+def build_model(pretrained=True, backbone="resnet50"):
+    if backbone != "resnet50":
+        return LightL2CS(backbone, pretrained)
     model = L2CS(torchvision.models.resnet.Bottleneck, [3, 4, 6, 3], BINS)
     if pretrained:
         sd = torch.hub.load_state_dict_from_url(RESNET50_URL, progress=False)
@@ -113,7 +157,7 @@ def build_model(pretrained=True):
 
 def set_train_mode(model, bn_train):
     model.train()
-    if not bn_train:
+    if not bn_train and isinstance(model, L2CS):
         for layer in (model.layer1, model.layer2, model.layer3, model.layer4):
             for name, m in layer.named_modules():
                 if "bn" in name:
@@ -121,6 +165,8 @@ def set_train_mode(model, bn_train):
 
 
 def param_groups(model, lr):
+    if not isinstance(model, L2CS):
+        return [{"params": list(model.parameters()), "lr": lr}]
     ignored = [p for m in (model.conv1, model.bn1, model.fc_finetune) for p in m.parameters()]
     body = [p for m in (model.layer1, model.layer2, model.layer3, model.layer4) for p in m.parameters()]
     fc = [p for m in (model.fc_yaw_gaze, model.fc_pitch_gaze) for p in m.parameters()]
@@ -179,8 +225,14 @@ def main():
     ap.add_argument("--max-iters", type=int, default=0, help="debug: stop each epoch after N iters")
     ap.add_argument("--save-every-epoch", action="store_true")
     ap.add_argument("--resume", action="store_true", help="continue from <out>/state.pt if present (same --epochs)")
+    ap.add_argument("--backbone", choices=BACKBONES, default="resnet50")
+    ap.add_argument("--img-size", type=int, default=448)
+    ap.add_argument("--teacher", default="", help="ResNet-50 L2CS state dict for knowledge distillation")
+    ap.add_argument("--kd-weight", type=float, default=1.0)
+    ap.add_argument("--kd-temp", type=float, default=2.0)
     ap.add_argument("--stop-after-epoch", type=int, default=0, help="debug: exit after this epoch without done.json")
     args = ap.parse_args()
+    args.teacher = args.teacher.format(fold=args.fold)  # e.g. --teacher /runs/fold{fold}_improved_e50/last.pkl
     for k, v in RECIPES[args.recipe].items():
         if getattr(args, k) is None:
             setattr(args, k, v)
@@ -209,8 +261,8 @@ def main():
     labels = [os.path.join(label_dir, f) for f in sorted(os.listdir(label_dir))]
     assert len(labels) == 15, labels
     img_dir = os.path.join(args.data, "Image")
-    train_set = MpiiFold(labels, img_dir, True, args.fold, aug=args.aug)
-    test_set = MpiiFold(labels, img_dir, False, args.fold, aug=False)
+    train_set = MpiiFold(labels, img_dir, True, args.fold, aug=args.aug, img_size=args.img_size)
+    test_set = MpiiFold(labels, img_dir, False, args.fold, aug=False, img_size=args.img_size)
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=args.workers,
                               pin_memory=True, drop_last=True, persistent_workers=args.workers > 0)
     test_loader = DataLoader(test_set, batch_size=64, shuffle=False, num_workers=args.workers, pin_memory=True)
@@ -218,7 +270,15 @@ def main():
     print(f"fold {args.fold} ({held_out}) recipe={args.recipe} sched={args.sched} aug={args.aug}: "
           f"train {len(train_set)} imgs, test {len(test_set)} imgs", flush=True)
 
-    model = build_model().to(device).to(memory_format=torch.channels_last)
+    model = build_model(backbone=args.backbone).to(device).to(memory_format=torch.channels_last)
+    teacher = None
+    if args.teacher:
+        teacher = build_model(pretrained=False).to(device).to(memory_format=torch.channels_last)
+        teacher.load_state_dict(torch.load(args.teacher, map_location="cpu"))
+        teacher.eval()
+        for p_ in teacher.parameters():
+            p_.requires_grad_(False)
+        print(f"distilling from {args.teacher} (weight {args.kd_weight}, T {args.kd_temp})", flush=True)
     optimizer = torch.optim.Adam(param_groups(model, args.lr), args.lr)
     iters_per_epoch = len(train_loader) if not args.max_iters else min(args.max_iters, len(train_loader))
     total_iters = args.epochs * iters_per_epoch
@@ -283,11 +343,21 @@ def main():
             cp, cy = cont[:, 0].to(device), cont[:, 1].to(device)
             with torch.autocast("cuda", dtype=amp_dtype or torch.bfloat16, enabled=amp_dtype is not None):
                 pitch, yaw = model(images)
+                if teacher is not None:
+                    with torch.no_grad():
+                        t_in = images if args.img_size == 448 else nn.functional.interpolate(
+                            images, size=(448, 448), mode="bilinear", align_corners=False)
+                        t_pitch, t_yaw = teacher(t_in)
             pitch, yaw = pitch.float(), yaw.float()
             pp = (torch.softmax(pitch, 1) * idx).sum(1) * BIN_W - ANGLE
             yp = (torch.softmax(yaw, 1) * idx).sum(1) * BIN_W - ANGLE
             ce_p, mse_p, ce_y, mse_y = ce(pitch, lp), mse(pp, cp), ce(yaw, ly), mse(yp, cy)
             loss = ce_p + args.alpha * mse_p + ce_y + args.alpha * mse_y
+            if teacher is not None:
+                T = args.kd_temp
+                kd = lambda s_, t_: nn.functional.kl_div(nn.functional.log_softmax(s_ / T, 1),  # noqa: E731
+                                                         nn.functional.softmax(t_.float() / T, 1), reduction="batchmean") * T * T
+                loss = loss + args.kd_weight * (kd(pitch, t_pitch) + kd(yaw, t_yaw))
             optimizer.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -298,11 +368,11 @@ def main():
             acc += parts; win += parts; n_it += 1; n_win += 1
             if n_win == args.log_every:
                 ips = n_win * args.batch_size / (time.time() - t_win)
-                iw.writerow([epoch, i + 1, step] + [f"{v:.5f}" for v in win / n_win] + [f"{scheduler.get_last_lr()[1]:.3e}", f"{ips:.1f}", datetime.now().isoformat(timespec="seconds")])
+                iw.writerow([epoch, i + 1, step] + [f"{v:.5f}" for v in win / n_win] + [f"{scheduler.get_last_lr()[-1]:.3e}", f"{ips:.1f}", datetime.now().isoformat(timespec="seconds")])
                 win[:] = 0; n_win = 0; t_win = time.time()
             if (i + 1) % 200 == 0:
                 ifile.flush()
-                print(f"epoch {epoch} iter {i+1}/{iters_per_epoch} loss {acc[0]/n_it:.4f} lr {scheduler.get_last_lr()[1]:.2e} "
+                print(f"epoch {epoch} iter {i+1}/{iters_per_epoch} loss {acc[0]/n_it:.4f} lr {scheduler.get_last_lr()[-1]:.2e} "
                       f"{(i+1)*args.batch_size/(time.time()-t0):.1f} img/s", flush=True)
             if args.max_iters and n_it >= args.max_iters:
                 break
@@ -313,7 +383,7 @@ def main():
         print(f"== epoch {epoch}/{args.epochs}: train loss {m[0]:.4f} | test err {ev['mean']:.3f} deg "
               f"(median {ev['median']:.2f}, pitch MAE {ev['pitch_mae']:.2f}, yaw MAE {ev['yaw_mae']:.2f}) | {dt/60:.1f} min, {ips:.1f} img/s", flush=True)
         mw.writerow([epoch] + [f"{v:.5f}" for v in m] + [f"{ev['mean']:.4f}", f"{ev['median']:.4f}", f"{ev['std']:.4f}", f"{ev['p90']:.4f}",
-                     f"{ev['pitch_mae']:.4f}", f"{ev['yaw_mae']:.4f}", ev["n"], f"{scheduler.get_last_lr()[1]:.3e}", f"{dt:.1f}", f"{ips:.1f}",
+                     f"{ev['pitch_mae']:.4f}", f"{ev['yaw_mae']:.4f}", ev["n"], f"{scheduler.get_last_lr()[-1]:.3e}", f"{dt:.1f}", f"{ips:.1f}",
                      f"{torch.cuda.max_memory_allocated()/2**20:.0f}", datetime.now().isoformat(timespec="seconds")])
         mfile.flush(); ifile.flush()
         torch.save(model.state_dict(), os.path.join(args.out, "last.pkl"))

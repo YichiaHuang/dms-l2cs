@@ -1,0 +1,112 @@
+{
+ "fold14_effb0_448_e20": {
+  "backbone": "efficientnet_b0",
+  "img_size": 448,
+  "fold": 14,
+  "person": "p14",
+  "qat_epochs": 2,
+  "qat_lr": 1e-05,
+  "int8_qat_err": 5.592983144414863,
+  "n_test": 1500,
+  "minutes": 6.315875613689423
+ },
+ "fold11_effb0_448_e20": {
+  "backbone": "efficientnet_b0",
+  "img_size": 448,
+  "fold": 11,
+  "person": "p11",
+  "qat_epochs": 2,
+  "qat_lr": 1e-05,
+  "int8_qat_err": 5.520129232869788,
+  "n_test": 2262,
+  "minutes": 6.467246146996816
+ },
+ "fold0_effb0_448_e20": {
+  "backbone": "efficientnet_b0",
+  "img_size": 448,
+  "fold": 0,
+  "person": "p00",
+  "qat_epochs": 2,
+  "qat_lr": 1e-05,
+  "int8_qat_err": 3.771705183949173,
+  "n_test": 2927,
+  "minutes": 6.4852590998013815
+ },
+ "fold7_effb0_448_e20": {
+  "backbone": "efficientnet_b0",
+  "img_size": 448,
+  "fold": 7,
+  "person": "p07",
+  "qat_epochs": 2,
+  "qat_lr": 1e-05,
+  "int8_qat_err": 5.1908809322283105,
+  "n_test": 2843,
+  "minutes": 6.500635647773743
+ },
+ "fold3_effb0_448_e20": {
+  "backbone": "efficientnet_b0",
+  "img_size": 448,
+  "fold": 3,
+  "person": "p03",
+  "qat_epochs": 2,
+  "qat_lr": 1e-05,
+  "int8_qat_err": 4.883659998410702,
+  "n_test": 2929,
+  "minutes": 6.5437089959780375
+ },
+ "fold14_mnv3l_448_kd_e20": {
+  "backbone": "mobilenet_v3_large",
+  "img_size": 448,
+  "fold": 14,
+  "person": "p14",
+  "qat_epochs": 2,
+  "qat_lr": 1e-05,
+  "int8_qat_err": 5.464620622641739,
+  "n_test": 1500,
+  "minutes": 4.316625249385834
+ },
+ "fold3_mnv3l_448_kd_e20": {
+  "backbone": "mobilenet_v3_large",
+  "img_size": 448,
+  "fold": 3,
+  "person": "p03",
+  "qat_epochs": 2,
+  "qat_lr": 1e-05,
+  "int8_qat_err": 3.2038855557267625,
+  "n_test": 2929,
+  "minutes": 4.15908764998118
+ },
+ "fold0_mnv3l_448_kd_e20": {
+  "backbone": "mobilenet_v3_large",
+  "img_size": 448,
+  "fold": 0,
+  "person": "p00",
+  "qat_epochs": 2,
+  "qat_lr": 1e-05,
+  "int8_qat_err": 3.0242813081059943,
+  "n_test": 2927,
+  "minutes": 4.2513962944348656
+ },
+ "fold11_mnv3l_448_kd_e20": {
+  "backbone": "mobilenet_v3_large",
+  "img_size": 448,
+  "fold": 11,
+  "person": "p11",
+  "qat_epochs": 2,
+  "qat_lr": 1e-05,
+  "int8_qat_err": 4.924008831701973,
+  "n_test": 2262,
+  "minutes": 4.315450215339661
+ },
+ "fold7_mnv3l_448_kd_e20": {
+  "backbone": "mobilenet_v3_large",
+  "img_size": 448,
+  "fold": 7,
+  "person": "p07",
+  "qat_epochs": 2,
+  "qat_lr": 1e-05,
+  "int8_qat_err": 4.0244557841338455,
+  "n_test": 2843,
+  "minutes": 4.308763829867045
+ }
+}
