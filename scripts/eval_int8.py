@@ -9,6 +9,7 @@ TRAINING persons (never the test person) and evaluate again. Writes one JSON row
 """
 import argparse
 import copy
+import csv
 import importlib.util
 import json
 import math
@@ -24,16 +25,33 @@ tm = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(tm)
 
 
 @torch.no_grad()
-def evaluate_cpu(model, loader):
+def evaluate_cpu(model, loader, pred_csv=None, flip=False):
+    """Mean angular error on CPU. pred_csv: write per-image rows in the same format as train_mpii's
+    predictions/epoch_N.csv. flip: average with the horizontally mirrored image (label[0] negated)."""
     idx = torch.arange(tm.BINS, dtype=torch.float32)
-    errs = []
-    for images, _, cont, _ in loader:
+    dec = lambda o: (torch.softmax(o.float(), 1) * idx).sum(1) * tm.BIN_W - tm.ANGLE  # noqa: E731
+    errs, rows = [], []
+    for images, _, cont, names in loader:
         a, b = model(images)
-        p = (torch.softmax(a.float(), 1) * idx).sum(1) * tm.BIN_W - tm.ANGLE
-        y = (torch.softmax(b.float(), 1) * idx).sum(1) * tm.BIN_W - tm.ANGLE
-        for pa, pb, ga, gb in zip(p.tolist(), y.tolist(), cont[:, 0].tolist(), cont[:, 1].tolist()):
-            errs.append(tm.angular(tm.gazeto3d([math.radians(pa), math.radians(pb)]), tm.gazeto3d([math.radians(ga), math.radians(gb)])))
+        p, y = dec(a), dec(b)
+        if flip:
+            fa, fb = model(torch.flip(images, dims=[3]))
+            p, y = (p - dec(fa)) / 2, (y + dec(fb)) / 2
+        for nm, pa, pb, ga, gb in zip(names, p.tolist(), y.tolist(), cont[:, 0].tolist(), cont[:, 1].tolist()):
+            e = tm.angular(tm.gazeto3d([math.radians(pa), math.radians(pb)]), tm.gazeto3d([math.radians(ga), math.radians(gb)]))
+            errs.append(e)
+            rows.append([nm.split("|")[0], nm.split("|")[1], f"{ga:.3f}", f"{gb:.3f}", f"{pa:.3f}", f"{pb:.3f}", f"{e:.4f}"])
+    if pred_csv:
+        write_preds(pred_csv, rows)
     return float(np.mean(errs)), len(errs)
+
+
+def write_preds(path, rows):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["face", "origin", "gt_pitch_deg", "gt_yaw_deg", "pred_pitch_deg", "pred_yaw_deg", "angular_err_deg"])
+        w.writerows(rows)
 
 
 def main():
@@ -53,7 +71,7 @@ def main():
     out = json.load(open(a.out)) if os.path.exists(a.out) else {}
     for run in a.runs:
         name = os.path.basename(run.rstrip("/"))
-        if name in out:
+        if name in out and os.path.exists(os.path.join(run, "predictions", "final_int8_ptq.csv")):
             print(name, "already done"); continue
         cfg = json.load(open(os.path.join(run, "config.json")))
         bb, size, fold = cfg.get("backbone", "resnet50"), cfg.get("img_size", 448), cfg["fold"]
@@ -72,7 +90,7 @@ def main():
             for images, *_ in calib:
                 prepared(images)
         q = convert_fx(prepared)
-        int8, _ = evaluate_cpu(q, tl)
+        int8, _ = evaluate_cpu(q, tl, pred_csv=os.path.join(run, "predictions", "final_int8_ptq.csv"))
         out[name] = dict(backbone=bb, img_size=size, fold=fold, person=cfg.get("held_out"), weights=a.weights,
                          fp32_err=fp32, int8_err=int8, delta=int8 - fp32, n_test=n, calib=a.calib)
         print(json.dumps({name: out[name]}), flush=True)

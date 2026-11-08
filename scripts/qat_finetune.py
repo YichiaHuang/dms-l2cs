@@ -39,24 +39,37 @@ def main():
     ap.add_argument("--lr", type=float, default=1e-5)
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--threads", type=int, default=6)
+    ap.add_argument("--suffix", default="", help="variant name: JSON key <run><suffix>, files *_qat<suffix>*")
+    ap.add_argument("--eval-only", action="store_true", help="re-evaluate the saved int8 model (writes per-image predictions)")
     a = ap.parse_args()
     from torch.ao.quantization import get_default_qat_qconfig_mapping
     from torch.ao.quantization.quantize_fx import convert_fx, prepare_qat_fx
     torch.manual_seed(0)
     name = os.path.basename(a.run.rstrip("/"))
+    key = name + a.suffix
+    int8_path = os.path.join(a.save_dir, f"{name}_qat_int8{a.suffix}.pt")
+    pred_csv = os.path.join(a.run, "predictions", f"final_int8_qat{a.suffix}.csv")
     cfg = json.load(open(os.path.join(a.run, "config.json")))
     bb, size, fold = cfg.get("backbone", "resnet50"), cfg.get("img_size", 448), cfg["fold"]
     labels = [os.path.join(a.data, "Label", f) for f in sorted(os.listdir(os.path.join(a.data, "Label")))]
     img_dir = os.path.join(a.data, "Image")
     train = tm.MpiiFold(labels, img_dir, True, fold, aug=True, img_size=size)
     test = tm.MpiiFold(labels, img_dir, False, fold, aug=False, img_size=size)
-    tl = DataLoader(train, batch_size=16, shuffle=True, num_workers=a.workers, drop_last=True, pin_memory=True)
+    tl = None if a.eval_only else DataLoader(train, batch_size=16, shuffle=True, num_workers=a.workers, drop_last=True, pin_memory=True)
     vl = DataLoader(test, batch_size=64, num_workers=a.workers)
 
     model = tm.build_model(pretrained=False, backbone=bb)
     model.load_state_dict(torch.load(os.path.join(a.run, "last.pkl"), map_location="cpu"))
     model.train()
-    qat = prepare_qat_fx(model, get_default_qat_qconfig_mapping("x86"), (torch.randn(1, 3, size, size),)).cuda()
+    qat = prepare_qat_fx(model, get_default_qat_qconfig_mapping("x86"), (torch.randn(1, 3, size, size),))
+    if a.eval_only:  # same graph -> convert -> load the saved int8 weights; reproduces the stored number exactly
+        torch.set_num_threads(a.threads)
+        int8 = convert_fx(qat.eval())
+        int8.load_state_dict(torch.load(int8_path, map_location="cpu"))
+        err, ntest = ei.evaluate_cpu(int8, vl, pred_csv=pred_csv)
+        print(json.dumps({key: dict(int8_qat_err_reeval=err, n_test=ntest)}), flush=True)
+        return
+    qat = qat.cuda()
     opt = torch.optim.Adam(qat.parameters(), a.lr)
     ce, mse = nn.CrossEntropyLoss(), nn.MSELoss()
     idx = torch.arange(tm.BINS, dtype=torch.float32, device="cuda")
@@ -82,16 +95,16 @@ def main():
     qat = qat.cpu().eval()
     torch.set_num_threads(a.threads)
     int8 = convert_fx(copy.deepcopy(qat))
-    err, ntest = ei.evaluate_cpu(int8, vl)
+    err, ntest = ei.evaluate_cpu(int8, vl, pred_csv=pred_csv)
     os.makedirs(a.save_dir, exist_ok=True)
-    torch.save(int8.state_dict(), os.path.join(a.save_dir, f"{name}_qat_int8.pt"))
+    torch.save(int8.state_dict(), int8_path)
     row = dict(backbone=bb, img_size=size, fold=fold, person=cfg.get("held_out"), qat_epochs=a.epochs, qat_lr=a.lr,
                int8_qat_err=err, n_test=ntest, minutes=(time.time() - t0) / 60)
-    print(json.dumps({name: row}), flush=True)
+    print(json.dumps({key: row}), flush=True)
     with open(a.out + ".lock", "w") as lk:  # several processes append to the same JSON
         fcntl.flock(lk, fcntl.LOCK_EX)
         out = json.load(open(a.out)) if os.path.exists(a.out) else {}
-        out[name] = row
+        out[key] = row
         json.dump(out, open(a.out, "w"), indent=1)
 
 

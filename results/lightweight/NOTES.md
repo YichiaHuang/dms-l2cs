@@ -47,3 +47,34 @@ pilot 2 次約 1.1 GPU-h、篩選 5 個約 9.5 GPU-h、bench 0.06 GPU-h；進行
 - **建議**：上車用 MobileNetV3-L @448 + KD + int8 QAT（0.85 GMACs，5 人 4.13°）。要正式定論需補 15 fold（約 6 GPU-h），尚未執行（quota）。
 - QAT 的 int8 權重在 `/work/u8714813/runs/l2cs_light/qat/*_qat_int8.pt`，不 commit。
 - 輕量化合計 **18.3 GPU-h**。
+
+## 2026-11-08 最終實驗批次（使用者：「盡量優化、完整實驗數據，最後整理成論文式報告」）
+目標：主要結果都補到 15 fold，加上消融、量化、TTA，並從逐張預測算出完整指標（mean/median/std/p90、pitch/yaw MAE、Acc@θ、gaze-zone F1）。
+
+| job | 內容 | 預估 GPU-h |
+|---|---|---|
+| 726189 | MobileNetV3-L + KD（T2）補其餘 10 fold → 15 fold | ~4 |
+| 726190 | KD 溫度掃描：T=4（w=1），5 fold | ~2 |
+| 726191 | 實驗 C1：只 cosine（`--no-aug`），5 fold × 50 epoch | ~5 |
+| 726192 | 實驗 C2：只增強（`--sched const`），5 fold × 50 epoch | ~7 |
+| （待送） | int8 PTQ（15 fold）、QAT（15 fold + 加長 QAT 變體）、flip-TTA 評估、int8 CPU 延遲 | ~3 |
+預估合計約 21 GPU-h。逐張預測從 `predictions/epoch_N.csv` 取（每個 run 每個 epoch 都有），不需要重跑。
+
+### 程式變更（最終批次）
+- `scripts/eval_int8.py`：`evaluate_cpu(..., pred_csv, flip)` 會寫逐張預測（格式同 `predictions/epoch_N.csv`）；PTQ 結果另存 `<run>/predictions/final_int8_ptq.csv`。PTQ 是確定性的（固定 256 張校正影像、seed 0），重跑與先前數字相同。
+- `scripts/qat_finetune.py`：加 `--suffix`（變體名，例如 `_q5`）、`--eval-only`（重建同一個 FX 圖 → convert → 載入已存 int8 權重，只評估並寫逐張預測）。驗證：fold0 MobileNetV3-L+KD 重評估 3.02428 = 原紀錄 3.02428。
+- 新增 `scripts/eval_tta.py`（GPU，水平翻轉 TTA；同時重算不翻轉結果以檢查與 metrics.csv 最後一列一致）、`scripts/bench_int8.py`（CPU fp32 vs int8 延遲、H200 batch 64 吞吐量）、`scripts/make_final_report.py`（從逐張預測算完整指標與圖）。
+- 後處理 job：726215（3×H200，TTA + PTQ + QAT 重評估 + 加長 QAT `_q5`：5 epoch、lr 5e-5）、726216（dev，int8 延遲）。
+- 726216 結果（Xeon 1 核 batch 1）：ResNet-50 fp32 340 → int8 32 ms；EfficientNet-B0 85 → 60 ms；MobileNetV3-L 40 → 20 ms。H200 bf16 batch 64：ResNet-50 3929、EfficientNet-B0 5424、MobileNetV3-L 8819 img/s。
+
+### 最終批次結果（2026-11-09）
+- 726189（46 min ×5 GPU ≈ 3.9 GPU-h）：MobileNetV3-L+KD 15 fold 完成。
+- 726190（24 min ×5 ≈ 2.0 GPU-h）：KD T=4，5 人 = 2.91/3.22/3.73/6.05/5.56 → 平均 4.29，比 T=2（4.18）差，5 人全部變差 → **維持 T=2**。
+- 726191 / 726192（C1 52 min、C2 58 min，各 5 GPU ≈ 4.3 + 4.8 GPU-h）：消融完成，結果見 `results/final/`。原估計 12 GPU-h，實際約 9。
+- 726215（2 h 37 min ×3 GPU ≈ 7.8 GPU-h）：比預期久，瓶頸是單一 CPU 行程跑 35 個 PTQ。post2 改成 3 個 PTQ 行程並行。
+- 加長 QAT `_q5`（5 epoch、lr 5e-5）：EfficientNet-B0 4.99 → **4.61**（變好，但仍比 MobileNetV3-L+KD QAT 差）；MobileNetV3-L+KD 4.13 → **4.41**（變差）→ 推薦模型維持預設 QAT（2 epoch、lr 1e-5）。只在 5 人上試，不補 15 fold。
+- 727859（post2，2×H200）：其餘 10 fold 的 QAT/PTQ/TTA，以及 kdT4 / C 的 TTA。
+- 727859（28 min ×2 GPU ≈ 0.9 GPU-h）：完成。TTA 共 95 個 run；不翻轉的重算與 metrics.csv 最後一列最大差 0.0023°（bf16 非確定性）。
+- **15 fold 最終**：MobileNetV3-L+KD fp32 4.01 ± 1.04、+TTA 3.97、int8 PTQ 4.88、**int8 QAT 4.15 ± 0.75**（vs ResNet-50 B fp32 4.15，p = 0.98）。
+- 消融 C（5 人 @ep50）：論文配方 4.33、只 cosine 4.55、只增強 3.99、兩者 4.09 → 改善來自增強；p14 是被增強拖累的人（4.47 → 5.7）。
+- 最終批次合計 23.8 GPU-h；整個專案約 80 GPU-h。完整報告：`results/final/RESULTS_FINAL.md`。
