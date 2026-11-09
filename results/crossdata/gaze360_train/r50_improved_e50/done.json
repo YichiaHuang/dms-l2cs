@@ -1,0 +1,8 @@
+{
+ "finished": "2026-11-09T18:19:08",
+ "test_last": 11.1926,
+ "test_at_best_val": 11.177,
+ "best_val_epoch": 22,
+ "test_best": 11.1105,
+ "best_test_epoch": 41
+}
