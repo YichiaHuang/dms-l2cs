@@ -76,3 +76,43 @@ lowers error by only 1–2° -> appearance gap, not a frame/sign issue. Gaze360 
 Also corrected RESULTS_FINAL.md: MPII test set is 37,667 faces (all frames), not "44,999" (GazeHub 3000/person list).
 Cross-dataset GPU total ≈ 5.6 GPU-h (jobs 735475, 735778, 735800, 735801, 736623, 737204).
 Downloaded-but-unused `_noglasses` tars (no labels) remain in /work/u8714813/datasets/raw/rtgene; deletable.
+
+## 2026-11-10 Next experiment (user approved): wide-range lightweight model (G2 / J1 / J1-int8)
+Goal: test the report's recommendation "train on wide-range data, then lightweight + int8".
+- G2: MobileNetV3-L @448, Gaze360 train only, KD from G1 (= r50_paper_e50 last.pkl), improved recipe, lr 1e-4, 20 ep (job 747927).
+- J1: same + MPII persons p01 p02 p04 p05 p06 p08 p09 p10 p12 p13 (25,206 faces) in training; KD only on Gaze360
+  samples (teacher never saw MPII) (job 747929; first submission 747928 cancelled within seconds: the MPII list
+  separator "/" was not converted -> fixed in train_light.sh).
+- Held-out MPII persons p00 p03 p07 p11 p14 (the 5-person screening set, 12,461 faces) evaluated every epoch for both.
+- Pre-registered success criteria: RT-GENE clearly below the current ~15° (target < 12°); MPII held-out not worse than
+  the deployed model by > 0.5°; int8 within 0.3° of fp32.
+- Reference for MPII held-out: the MPII-only LOPO models (each trained on 14 MPII persons — more MPII data than J1's 10).
+- Smoke test job (dev, 300 it/epoch) OK: 110,108 training images for J1 = 84,902 + 25,206.
+
+## 2026-11-10 Results: G2 / J1 / int8 (jobs 747927, 747929, 748235 GPU eval; 748233, 748234 QAT + CPU eval)
+fp32 (GPU bf16, last epoch; MPII = person-mean over held-out p00/p03/p07/p11/p14; others pooled):
+| model | Gaze360 test | MPII held-out 5 | RT-GENE (pooled / subject-mean) |
+|---|---|---|---|
+| deployed MPII-only MNv3L+KD (LOPO, 14 persons/fold) fp32 / QAT | ~31 | 4.18 / 4.13 | ~15.0 |
+| G1 = R50 Gaze360 paper e50 | 11.04 | 8.43 | 28.64 / 27.54 |
+| G2 = MNv3L+KD, Gaze360 only, 20 ep | 11.71 (best-val ep13: 11.65) | 8.41 | 28.93 / 27.61 |
+| J1 = MNv3L+KD, Gaze360 + 10 MPII persons | 11.57 (best-val ep6: 11.30) | 5.27 | 28.92 / 26.41 |
+QAT (2 ep, ~10–12 min GPU) then CPU eval, fp32 on CPU from the same loader:
+| model | Gaze360 fp32→int8 (pooled; person-mean) | MPII-5 fp32→int8 (pooled; person-mean) | RT-GENE fp32→int8 (pooled) |
+|---|---|---|---|
+| G2 | 11.64→12.26 (+0.62); 12.48→14.34 | 8.49→8.61 (+0.12); 8.37→8.35 | 28.54→30.38 (+1.84) |
+| J1 | 11.58→11.92 (+0.33); 12.24→13.48 | 5.09→5.36 (+0.27); 5.26→5.58 (+0.32) | 28.58→27.55 (−1.03) |
+CPU fp32 vs GPU bf16 differ by ≤0.02° on Gaze360/MPII but ~0.35–0.4° on RT-GENE (out-of-distribution inputs are
+more precision-sensitive); int8 deltas are always against the CPU fp32 of the same images.
+The smoke-run lines at the top of qat-G2-748233.out (20 iters, 200 images) are not results.
+
+Verdict against the pre-registered criteria:
+1. RT-GENE < 12°: FAIL. Wide-range training makes RT-GENE worse (~29° vs ~15° for MPII-only).
+2. MPII held-out within 0.5° of deployed: FAIL. J1 5.27 vs 4.18 (+1.09; J1 sees 10 MPII persons vs 14).
+3. int8 within 0.3° of fp32: FAIL (marginal) for J1: +0.33 Gaze360, +0.32 MPII person-mean (+0.27 pooled).
+   G2 fails clearly on Gaze360 (+0.62). The MPII-only model lost nothing (−0.05) under the same QAT schedule.
+Conclusion: "train on wide-range data, then lightweight + int8" is NOT supported as a fix for RT-GENE-type appearance
+shift. J1 is still useful as a single small model covering both wide-range (Gaze360 11.6°) and frontal (MPII 5.3°) data.
+GPU: 747927 1.12 h, 747929 1.22 h, 748233 1.12 h, 748234 1.18 h, 748235 0.06 h, 747914 smoke 0.06 h, 747928 ~0
+→ ≈4.8 GPU-h. (QAT jobs spent most wall time on the CPU eval; the GPU sat idle for that part.)
+Weights qat_int8.pt and predictions/*.npz stay in /work (not committed).

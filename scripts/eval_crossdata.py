@@ -102,7 +102,8 @@ def infer(a, ds):
         models["official_gaze360"] = (m, 90, 4, 180)
     for run in a.g360_runs:
         cfg = json.load(open(os.path.join(run, "config.json")))
-        m = tm.L2CS(__import__("torchvision").models.resnet.Bottleneck, [3, 4, 6, 3], cfg["bins"])
+        saved = tm.BINS; tm.BINS = cfg["bins"]  # build_model reads the module global
+        m = tm.build_model(pretrained=False, backbone=cfg.get("backbone", "resnet50")); tm.BINS = saved
         m.load_state_dict(torch.load(os.path.join(run, "last.pkl"), map_location="cpu"))
         models["g360_" + os.path.basename(run.rstrip("/"))] = (m, cfg["bins"], cfg["bin_w"], cfg["angle"])
     for tag in a.tags:
@@ -139,8 +140,14 @@ def score(a, ds, preds, gt):
                 chk[f"swapped h{'+' if sh > 0 else '-'} v{'+' if sv > 0 else '-'}"] = float(ang_err(p[:, 1], p[:, 0], sh * gh, sv * gv).mean())
         res["sign_check_official"] = chk
         print("sign check (official model, mean err):", json.dumps(chk, indent=1), flush=True)
+    gcol = next((c for c in ("person", "subject") if c in ds.rows[0]), None)
+    groups = np.array([r[gcol] for r in ds.rows]) if gcol else None
     for k, p in preds.items():
-        res["models"][k] = summarise(ang_err(p[:, 0], p[:, 1], gh, gv), gh, gv)
+        e = ang_err(p[:, 0], p[:, 1], gh, gv)
+        res["models"][k] = summarise(e, gh, gv)
+        if groups is not None:  # per-person mean, then mean over persons (the MPIIFaceGaze convention)
+            per = {g: float(e[groups == g].mean()) for g in np.unique(groups)}
+            res["models"][k]["group_mean"] = float(np.mean(list(per.values()))); res["models"][k]["per_group"] = per
         res["models"][k]["corr_h"] = float(np.corrcoef(p[:, 0], gh)[0, 1]); res["models"][k]["corr_v"] = float(np.corrcoef(p[:, 1], gv)[0, 1])
     for tag in a.tags:  # aggregate the 15 fold models
         ks = [k for k in preds if k.startswith(tag + "/")]

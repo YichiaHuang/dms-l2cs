@@ -1,0 +1,9 @@
+{
+ "finished": "2026-11-10T20:31:18",
+ "test_last": 11.5743,
+ "test_at_best_val": 11.3047,
+ "best_val_epoch": 6,
+ "test_best": 11.3047,
+ "best_test_epoch": 6,
+ "mpii_person_mean_last": 5.2661
+}
