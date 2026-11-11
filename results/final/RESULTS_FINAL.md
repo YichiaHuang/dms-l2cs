@@ -318,6 +318,27 @@ fp32 為最後一個 epoch（GPU）。int8 差距是 QAT 2 epoch 後在 CPU 上�
 - **J1 仍有實用價值。** 一個 0.85 GMACs 的模型同時涵蓋大角度（Gaze360 11.6°，接近 ResNet-50 的 11.0°）與正面（MPII 5.3°）。現有模型在 Gaze360 是約 31°。若車內常有大角度轉頭，J1 比較安全。
 - **RT-GENE 的問題不是角度範圍，而是影像外觀**（遠距離、低解析度、眼鏡 inpainting）。擴大訓練角度只會讓模型更傾向預測大角度，在 RT-GENE 上反而更差。要解決這類落差，需要目標領域的資料（少量微調、領域適應或車內實際資料）。
 
+### 5.5 用少量目標領域資料微調（表 10，篩選，RT-GENE 第 0 組）
+
+從 J1 出發，用 RT-GENE 的 11 個受試者微調，在另外 6 個從未見過的受試者上測試（受試者依編號排序，第 i 人屬於第 i % 3 組，第 0 組當測試）。每個設定 1,500 iteration，Adam 3e-5，cosine 衰減到 1/100。設定細節與事先登記的標準見 README 第 4 節與 `results/crossdata/NOTES.md`。
+
+| 設定 | RT-GENE 張數 | RT-GENE 測試 6 人（全部影像平均／逐人平均） | MPII 留出 5 人 | Gaze360 test |
+|---|---|---|---|---|
+| J1 微調前 | 0 | 29.71／26.10 | 5.27 | 11.57 |
+| MPII-only MobileNetV3-L + KD（15 fold 模型平均） | 0 | 15.71／14.47 | — | 31.0 |
+| 每人 10 張 | 110 | 13.78／10.83 | 5.12 | 21.70 |
+| 每人 100 張 | 1,100 | 13.67／10.31 | 6.39 | 22.81 |
+| 全部 | 79,819 | 13.39／10.20 | 6.22 | 24.03 |
+| 全部 + 50% replay | 79,819 | 14.55／11.58 | 5.41 | 11.92 |
+
+- **110 張就拿到幾乎全部的效果**（29.7° → 13.8°；8 萬張為 13.4°）。外觀落差雖大，但只要很少的目標資料就能大幅修正。
+- **純微調會嚴重遺忘大角度**（Gaze360 +10–12°）；混入 50% 原訓練資料後遺忘可忽略（+0.3°），RT-GENE 代價 +1.2°。
+- **事先登記的判定**：
+  - RT-GENE < 12°（每人 ≤ 100 張）：以預先採用的全部影像平均為 13.7°，**未達成**；逐人平均 10.3° 則達成。
+  - 不遺忘：只有 replay 版本達成。
+  - 依規定不進入「3 組 + int8」階段。
+- **限制**：只有 1 組受試者切分、1 個 seed。
+
 ## 6. 結論與建議
 
 1. **報告用的重現數字**：誠實數字為 4.70°（論文配方）與 4.15°（改良配方）；最佳 epoch 3.38–3.53° 只能當作上限參考。
@@ -331,6 +352,7 @@ fp32 為最後一個 epoch（GPU）。int8 差距是 QAT 2 epoch 後在 CPU 上�
 6. **跨資料集泛化是上車前最大的風險。** MPII 訓練的模型換到 RT-GENE 誤差變成 14–15°，換到 Gaze360 變成 29–32°。
 7. **只擴大訓練角度範圍不能解決外觀落差**（5.4，事先登記的三個標準都沒有達成）。Gaze360 + MPII 聯合訓練的 MobileNetV3-L（J1）能用一個小模型同時涵蓋大角度（11.6°）與正面（5.3°）；但 RT-GENE 仍約 29°，MPII 比現有模型差 1.1°，int8 差距 0.33°。
    - 建議：車內若有大角度轉頭，部署 J1 這類聯合訓練模型；上車前一定要收集少量車內（近紅外線）資料做微調與驗證，這比換資料集或換骨幹更關鍵。
+8. **少量目標資料就很有效（5.5）**：每人 10 張（共 110 張）RT-GENE 影像就讓新受試者的誤差從 29.7° 降到 13.8°，優於只用 MPII 訓練的模型（15.7°）。但必須混入原訓練資料，否則會忘記大角度（Gaze360 退到 22°）。
 
 ## 7. 限制
 
@@ -359,13 +381,14 @@ fp32 為最後一個 epoch（GPU）。int8 差距是 QAT 2 epoch 後在 CPU 上�
 | 跨資料集評估（Gaze360、RT-GENE、MPII） | 735475、736623、737204 | 0.8 |
 | Gaze360 重新訓練（冒煙測試 + 2 配方 × 50 epoch） | 735778、735800、735801 | 4.8 |
 | 大角度輕量模型 G2／J1 訓練 + QAT + 評估 | 747914、747927、747929、748233–748235 | 4.8 |
-| **合計** | | **約 91** |
+| RT-GENE 少量微調（冒煙測試 + 篩選） | 751388、751859 | 0.7 |
+| **合計** | | **約 92** |
 
 **程式：**
 - `scripts/train_mpii.py`：訓練；`--backbone`、`--img-size`、`--teacher` 這些旗標不加時行為與原版相同。
 - 評估：`scripts/eval_tta.py`、`scripts/eval_int8.py`、`scripts/qat_finetune.py`。
 - 速度：`scripts/bench_light.py`、`scripts/bench_int8.py`。
-- 跨資料集：`scripts/prep_gaze360.py`、`scripts/prep_rtgene.py`、`scripts/mpii_to_csv.py`、`scripts/eval_crossdata.py`、`scripts/train_gaze360.py`（含 `--backbone`／`--teacher`／`--mpii-train` 聯合訓練）、`scripts/qat_gaze360.py`。
+- 跨資料集：`scripts/prep_gaze360.py`、`scripts/prep_rtgene.py`、`scripts/mpii_to_csv.py`、`scripts/eval_crossdata.py`、`scripts/train_gaze360.py`（含 `--backbone`／`--teacher`／`--mpii-train` 聯合訓練）、`scripts/qat_gaze360.py`、`scripts/finetune_rtgene.py`。
 - 報表：`scripts/make_final_report.py`、`scripts/make_light_report.py`、`scripts/make_remote_charts.py`。
 
 **執行紀錄：** `results/remote/NOTES.md`、`results/lightweight/NOTES.md`。

@@ -126,3 +126,20 @@ Pre-registered: (1) RT-GENE new subjects < 12° with ≤ 100 images/subject; (2)
 Smoke test job 751388 (dev, 6 min, 20 iters, 300-image evals) OK for all three modes (J1 per-subject, J1 replay,
 MPII-only 28-bin base fold0_mnv3l_448_kd_e20 with --mpii-test p00). Smoke numbers are not results.
 Screening script /work/u8714813/runs/rtgene_ft/screen.sh (fold 0, 4 settings, ~1 GPU-h) prepared, NOT submitted yet.
+
+## 2026-11-11 R1 screening results (job 751859, 8gpus, 35.6 min = 0.6 GPU-h)
+Fold 0: test subjects s000 s003 s006 s009 s012 s015 (34,739 faces; README earlier said 5 subjects / 12 adapt — corrected:
+17 % 3 gives 6 test / 11 adapt). Values at iter 1500 (pooled / subject-mean):
+| setting | n_adapt | RT-GENE test | MPII-5 person-mean | Gaze360 test |
+|---|---|---|---|---|
+| J1 before | 0 | 29.71 / 26.10 | 5.27 | 11.57 |
+| MPII-only MNv3L+KD (mean of 15 fold models, from rtgene_preds.npz) | 0 | 15.71 / 14.47 | – | ~31 |
+| n10 | 110 | 13.78 / 10.83 | 5.12 | 21.70 |
+| n100 | 1,100 | 13.67 / 10.31 | 6.39 | 22.81 |
+| all | 79,819 | 13.39 / 10.20 | 6.22 | 24.03 |
+| all + 50% replay | 79,819 | 14.55 / 11.58 | 5.41 | 11.92 |
+Verdict: (1) < 12° FAIL on the pooled metric used for every earlier RT-GENE number (13.7); subject-mean would pass (10.3)
+— we keep pooled as primary since it was the convention when the criterion was written. (2) No-forgetting: PASS only with
+replay (+0.34 Gaze360, +0.14 MPII); pure fine-tuning forgets Gaze360 (+10–12°). (3) Gate not triggered -> 3 folds + int8
+not run automatically. Most of the gain comes from the first 110 images. Suggested follow-up (not run, needs approval):
+n10 + replay, and folds 1/2.
