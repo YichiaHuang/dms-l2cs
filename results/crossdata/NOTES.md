@@ -116,3 +116,13 @@ shift. J1 is still useful as a single small model covering both wide-range (Gaze
 GPU: 747927 1.12 h, 747929 1.22 h, 748233 1.12 h, 748234 1.18 h, 748235 0.06 h, 747914 smoke 0.06 h, 747928 ~0
 → ≈4.8 GPU-h. (QAT jobs spent most wall time on the CPU eval; the GPU sat idle for that part.)
 Weights qat_int8.pt and predictions/*.npz stay in /work (not committed).
+
+## 2026-11-11 Next experiment prepared: R1 = small target-domain fine-tuning on RT-GENE (README §4)
+scripts/finetune_rtgene.py: start from J1, RT-GENE subjects split by (sorted index % 3), fine-tune on N images per
+adapt subject (10 / 100 / all, + all with 50% replay of the base training data), 1500 iters, Adam 3e-5 cosine to 1/100;
+evaluate RT-GENE test subjects, MPII held-out 5, Gaze360 test at iter 0/500/1000/1500.
+Pre-registered: (1) RT-GENE new subjects < 12° with ≤ 100 images/subject; (2) MPII-5 and Gaze360 each ≤ +0.5° vs before
+(judged mainly on the replay run); (3) only if (1) holds: all 3 folds + int8 QAT.
+Smoke test job 751388 (dev, 6 min, 20 iters, 300-image evals) OK for all three modes (J1 per-subject, J1 replay,
+MPII-only 28-bin base fold0_mnv3l_448_kd_e20 with --mpii-test p00). Smoke numbers are not results.
+Screening script /work/u8714813/runs/rtgene_ft/screen.sh (fold 0, 4 settings, ~1 GPU-h) prepared, NOT submitted yet.
