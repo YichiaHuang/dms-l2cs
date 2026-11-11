@@ -143,3 +143,18 @@ Verdict: (1) < 12° FAIL on the pooled metric used for every earlier RT-GENE num
 replay (+0.34 Gaze360, +0.14 MPII); pure fine-tuning forgets Gaze360 (+10–12°). (3) Gate not triggered -> 3 folds + int8
 not run automatically. Most of the gain comes from the first 110 images. Suggested follow-up (not run, needs approval):
 n10 + replay, and folds 1/2.
+
+## 2026-11-11 R1 follow-up (job 752448, 48 min = 0.8 GPU-h; user approved)
+n10 and n10 + 50% replay on folds 0/1/2 (fold 0 n10 from the screening job). Iter 1500, RT-GENE pooled:
+| | f0 | f1 | f2 | mean |
+|---|---|---|---|---|
+| J1 before | 29.71 | 29.86 | 26.21 | 28.59 |
+| MPII-only MNv3L+KD (15-model mean, rtgene_preds.npz) | 15.71 | 15.51 | 13.06 | 14.76 |
+| n10 | 13.78 | 12.84 | 11.29 | 12.64 |
+| n10 + replay | 15.61 | 14.72 | 13.44 | 14.59 |
+Gaze360: n10 21.70/23.09/22.75; n10+replay 11.79/11.70/11.72 (before 11.57).
+MPII-5 person-mean: n10 5.12/5.82/6.14; n10+replay 5.37/5.23/5.68 (before 5.27).
+Subject-mean RT-GENE: n10 10.83/11.50/10.78; n10+replay 12.82/12.95/12.93.
+Fold sizes: f0 6 subj 34,739; f1 6 subj 51,536; f2 5 subj 28,283.
+Reading: gain from 110 images is consistent across folds; replay removes forgetting but with only 110 new images the
+50% replay dilutes them (RT-GENE back to MPII-only level). Untested ideas: replay 25%, 30-100 images/subject + replay.
