@@ -158,3 +158,24 @@ Subject-mean RT-GENE: n10 10.83/11.50/10.78; n10+replay 12.82/12.95/12.93.
 Fold sizes: f0 6 subj 34,739; f1 6 subj 51,536; f2 5 subj 28,283.
 Reading: gain from 110 images is consistent across folds; replay removes forgetting but with only 110 new images the
 50% replay dilutes them (RT-GENE back to MPII-only level). Untested ideas: replay 25%, 30-100 images/subject + replay.
+
+### R2 fold-1 node slowdown (2026-11-11)
+- Job 753692 (R2, fold 1) ran on 25a-hgpn007: the iter-0 eval took 27.9 min, and 500 iters took 59 min. Other folds take ~2.6 / 5.3 min on the same code, and fold 1 previously finished in ~10 min.
+- The node is slow, not the code. Job 753692 was cancelled at 1:15, and its partial run was moved to `/work/.../rtgene_ft/aborted/` (kept, not used).
+- Fold 1 was resubmitted as job 753961 with `--exclude=25a-hgpn007`. Lost ≈1.3 GPU-h.
+
+## 2026-11-11 R2: target amount vs replay ratio (jobs 753691, 753961, 753693; + aborted 753692) — 2.6 GPU-h incl. 1.3 lost
+Question (written in README before running, commit bb72eb8): can we get "12–13° and no forgetting"? Criteria used:
+RT-GENE pooled 3-fold mean ≤ 13°, and Gaze360 / MPII-5 each within +0.5° of J1 before (11.57 / 5.27), same rule as R1.
+Iter 1500, folds 0/1/2, mean:
+| setting | RT-GENE pooled | RT-GENE subj-mean | Gaze360 | MPII-5 | verdict |
+|---|---|---|---|---|---|
+| n10 (R1) | 13.78/12.84/11.29 = 12.64 | 11.04 | 22.52 | 5.69 | forgets |
+| n10 + 50% | 15.61/14.72/13.44 = 14.59 | 12.90 | 11.74 | 5.43 | RT-GENE fail |
+| n10 + 25% | 15.10/13.28/13.03 = 13.80 | 12.28 | 12.04 (+0.47) | 5.75 (+0.48) | RT-GENE fail |
+| n100 + 50% | 14.97/12.29/12.21 = 13.16 | 11.48 | 11.74 | 5.36 | RT-GENE fail by 0.16 |
+| n100 + 25% | 14.49/11.73/11.40 = **12.54** | 11.00 | 12.04 (+0.47) | 5.50 (+0.23) | **PASS (all three)** |
+Reading: n100 + 25% replay matches no-replay n10 on RT-GENE (12.54 vs 12.64) without forgetting. Gaze360 margin is thin
+(+0.47 vs 0.5 limit) and fold 0 alone is 14.49 (> 13); still better than the MPII-only car model on every fold
+(15.71/15.51/13.06). 25% replay costs ~+0.3–0.5° on Gaze360 vs 50%, but buys ~0.6–0.8° on RT-GENE.
+Single seed; int8 for this setting not run (would be next, needs approval).

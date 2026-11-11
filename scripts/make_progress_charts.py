@@ -66,8 +66,8 @@ def fig_backbones():
         for b, val in zip(bs, v):
             if not np.isnan(val):
                 ax.text(b.get_x() + b.get_width() / 2, val + 0.1, f"{val:.2f}", ha="center", fontsize=11, color=INK)
-    ax.set_xticks(x); ax.set_xticklabels(models); ax.set_ylabel("Mean error (°), 5 subjects"); ax.set_ylim(0, 8.5)
-    ax.legend(frameon=False, ncol=3, loc="upper left"); ax.grid(axis="x", visible=False)
+    ax.set_xticks(x); ax.set_xticklabels(models); ax.set_ylabel("Mean error (°), 5 subjects"); ax.set_ylim(0, 9.5)
+    ax.legend(frameon=False, ncol=3, loc="upper center", bbox_to_anchor=(0.5, 1.12)); ax.grid(axis="x", visible=False)
     save(fig, "p3_backbones_int8.png")
 
 
@@ -124,7 +124,7 @@ def fig_fewshot():
     sets = {"n10": "10/person", "n10_replay50": "10/person + 50% replay", "n10_replay25": "10/person + 25% replay",
             "n100_replay50": "100/person + 50% replay", "n100_replay25": "100/person + 25% replay"}
     fig, ax = plt.subplots(figsize=(8.5, 5))
-    ax.scatter(28.59, 11.57, s=120, color=GRAY, edgecolor="white", lw=2, zorder=3); ax.annotate("J1 before", (28.59, 11.57), xytext=(-10, 10), textcoords="offset points", ha="right")
+    ax.scatter(28.59, 11.57, s=120, color=GRAY, edgecolor="white", lw=2, zorder=3); ax.annotate("J1 before", (28.59, 11.57), xytext=(0, -26), textcoords="offset points", ha="center")
     ax.scatter(14.76, 31.0, s=120, color=GRAY, marker="s", edgecolor="white", lw=2, zorder=3); ax.annotate("current car model", (14.76, 31.0), xytext=(8, -4), textcoords="offset points")
     for k, lab in sets.items():
         rs = [f"{base}/J1_f{f}_{k}" for f in range(3)]
@@ -133,9 +133,20 @@ def fig_fewshot():
         m = np.mean([[last(r)["rtgene_mean"], last(r)["gaze360_mean"]] for r in rs], 0)
         c = AMBER if "replay" in k else BLUE
         ax.scatter(*m, s=120, color=c, edgecolor="white", lw=2, zorder=3)
-        ax.annotate(f"{lab}\n({m[0]:.1f}°, {m[1]:.1f}°)", m, xytext=(8, 4), textcoords="offset points", fontsize=10.5)
+        # replay points sit close together: fan labels above/below with leader lines
+        pos = {"n10": (8, 4, "left"), "n100_replay25": (10.3, 17.0, "left"), "n100_replay50": (10.3, 6.0, "left"),
+               "n10_replay25": (18.0, 17.0, "left"), "n10_replay50": (18.0, 6.0, "left")}
+        tx, ty, ha = pos[k]
+        txt = f"{lab}\n({m[0]:.1f}°, {m[1]:.1f}°)"
+        if k == "n10":
+            ax.annotate(txt, m, xytext=(tx, ty), textcoords="offset points", fontsize=10.5)
+        else:
+            ax.annotate(txt, m, xytext=(tx, ty), ha=ha, va="center", fontsize=10.5, bbox=dict(fc="white", ec="none", pad=1),
+                        arrowprops=dict(arrowstyle="-", color=GRAY, lw=1))
+    ax.axvline(13, color=GRAY, ls="--", lw=1); ax.text(13.1, 33, "target ≤ 13°", fontsize=10, color="#5b6573", va="top")
+    ax.axhline(11.57 + 0.5, color=GRAY, ls=":", lw=1); ax.text(24.0, 10.6, "no-forgetting limit (+0.5°)", fontsize=10, color="#5b6573", ha="right", va="top")
     ax.set_xlabel("RT-GENE error, unseen people (°)  → lower is better"); ax.set_ylabel("Gaze360 error (°)  ↓ forgetting")
-    ax.set_xlim(10, 31); ax.set_ylim(8, 34)
+    ax.set_xlim(10, 31); ax.set_ylim(3, 34)
     save(fig, "p7_fewshot_tradeoff.png")
 
 
@@ -154,5 +165,37 @@ def fig_widerange():
     save(fig, "p8_widerange.png")
 
 
+def fold_mean(base, key):
+    rs = [f"{base}/J1_f{f}_{key}" for f in range(3)]
+    if not all(os.path.exists(r + "/done.json") for r in rs):
+        return None
+    return {k: float(np.mean([last(r)[k] for r in rs])) for k in ("rtgene_mean", "gaze360_mean", "mpii_person_mean")}
+
+
+def fig_replay():
+    base = os.path.join(ROOT, "results", "crossdata", "rtgene_ft")
+    rows = [("J1 before fine-tuning", {"rtgene_mean": 28.59, "gaze360_mean": 11.57, "mpii_person_mean": 5.27}, GRAY),
+            ("Car model (MPII only)", {"rtgene_mean": 14.76, "gaze360_mean": 31.0, "mpii_person_mean": float("nan")}, GRAY)]
+    for key, lab in [("n10", "10/person, no replay"), ("n10_replay25", "10/person + 25% replay"), ("n10_replay50", "10/person + 50% replay"),
+                     ("n100_replay25", "100/person + 25% replay"), ("n100_replay50", "100/person + 50% replay")]:
+        m = fold_mean(base, key)
+        if m:
+            rows.append((lab, m, BLUE if "no replay" in lab else AMBER))
+    fig, axes = plt.subplots(1, 3, figsize=(17, 5.2), sharey=True)
+    for ax, (k, title, lim) in zip(axes, [("rtgene_mean", "RT-GENE, unseen people (target)", 33),
+                                          ("gaze360_mean", "Gaze360 test (forgetting?)", 36),
+                                          ("mpii_person_mean", "MPII, 5 unseen persons (forgetting?)", 8)]):
+        y = np.arange(len(rows))[::-1]
+        v = [r[1][k] for r in rows]
+        ax.barh(y, np.nan_to_num(v), color=[r[2] for r in rows], height=0.62, edgecolor="white", linewidth=2)
+        for yy, vv in zip(y, v):
+            ax.text((0 if np.isnan(vv) else vv) + lim * 0.01, yy, "n/a" if np.isnan(vv) else f"{vv:.1f}°", va="center", fontsize=11, color=INK)
+        ax.set_title(title, fontsize=13, color=INK, loc="left"); ax.set_xlim(0, lim); ax.grid(axis="y", visible=False)
+        ax.set_yticks(y); ax.set_yticklabels([r[0] for r in rows])
+    fig.text(0.01, -0.03, "Mean of 3 subject folds, error at the last iteration (°). Lower is better.", color=MUTED, fontsize=11)
+    fig.tight_layout()
+    save(fig, "p9_replay.png")
+
+
 if __name__ == "__main__":
-    fig_reproduction(); fig_ablation(); fig_backbones(); fig_cost(); fig_crossdata(); fig_widerange(); fig_fewshot()
+    fig_reproduction(); fig_ablation(); fig_backbones(); fig_cost(); fig_crossdata(); fig_widerange(); fig_fewshot(); fig_replay()
