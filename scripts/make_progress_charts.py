@@ -197,5 +197,40 @@ def fig_replay():
     save(fig, "p9_replay.png")
 
 
+def fig_convergence():
+    """Training convergence, MPII 15 folds x 50 epochs: test error and training loss, 15-person mean per epoch."""
+    rows = list(csv.DictReader(open(os.path.join(ROOT, "results", "remote", "all_epochs.csv"))))
+    rows = [r for r in rows if r["run"].endswith("_e50")]
+    def curve(recipe, key):
+        ep = sorted({int(r["epoch"]) for r in rows if r["recipe"] == recipe and int(r["epoch"]) >= 1})
+        m = [np.mean([float(r[key]) for r in rows if r["recipe"] == recipe and int(r["epoch"]) == e]) for e in ep]
+        n = {len([r for r in rows if r["recipe"] == recipe and int(r["epoch"]) == e]) for e in ep}
+        assert n == {15}, (recipe, key, n)
+        return np.array(ep), np.array(m)
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(15, 5.4))
+    for recipe, c, lab in [("paper", AMBER, "Paper recipe"), ("improved", BLUE, "Improved recipe")]:
+        x, y = curve(recipe, "test_err")
+        a1.plot(x, y, color=c, lw=2.2, label=lab)
+        a1.scatter([x[-1]], [y[-1]], s=60, color=c, edgecolor="white", lw=2, zorder=3)
+        a1.annotate(f"{y[-1]:.2f}°", (x[-1], y[-1]), xytext=(8, 0), textcoords="offset points", va="center", fontsize=12, color=INK)
+        if recipe == "paper":
+            i = int(np.argmin(y))
+            a1.scatter([x[i]], [y[i]], s=60, color=c, edgecolor="white", lw=2, zorder=3)
+            a1.annotate(f"lowest: epoch {x[i]}, {y[i]:.2f}°", (x[i], y[i]), xytext=(13, 3.78), textcoords="data", fontsize=11, color=INK,
+                        arrowprops=dict(arrowstyle="-", color=GRAY, lw=1))
+        x, y = curve(recipe, "train_loss")
+        a2.plot(x, y, color=c, lw=2.2, label=lab)
+        a2.annotate(f"{y[-1]:.1f}", (x[-1], y[-1]), xytext=(8, 0), textcoords="offset points", va="center", fontsize=12, color=INK)
+    a1.axhline(3.92, color=GRAY, ls="--", lw=1.2); a1.text(53, 3.89, "paper reported: 3.92°", color=MUTED, fontsize=10.5, va="top", ha="right")
+    a1.set_ylim(3.7, 4.9); a1.set_xlim(0, 54); a1.set_xlabel("epoch"); a1.set_ylabel("test angular error (°)")
+    a1.set_title("Test error on the held-out person", loc="left", fontsize=13, color=INK); a1.legend(frameon=False, loc="upper left")
+    a2.set_yscale("log"); a2.set_xlim(0, 54); a2.set_xlabel("epoch"); a2.set_ylabel("training loss (CE + MSE, log scale)")
+    a2.set_title("Training loss", loc="left", fontsize=13, color=INK); a2.legend(frameon=False, loc="upper right")
+    fig.text(0.01, -0.03, "MPIIFaceGaze, ResNet-50, mean of 15 leave-one-person-out folds per epoch. Epoch 0 (before training, 11.1°) not shown.",
+             color=MUTED, fontsize=11)
+    fig.tight_layout()
+    save(fig, "p10_convergence.png")
+
+
 if __name__ == "__main__":
-    fig_reproduction(); fig_ablation(); fig_backbones(); fig_cost(); fig_crossdata(); fig_widerange(); fig_fewshot(); fig_replay()
+    fig_reproduction(); fig_ablation(); fig_backbones(); fig_cost(); fig_crossdata(); fig_widerange(); fig_fewshot(); fig_replay(); fig_convergence()
